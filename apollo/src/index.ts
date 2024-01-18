@@ -1,5 +1,7 @@
 import { ApolloServer } from '@apollo/server';
 import { startStandaloneServer } from '@apollo/server/standalone';
+import { KeyValueCache } from "@apollo/utils.keyvaluecache";
+import { TimeStampDatasource } from './datasources/timestamp-datasource.js'; // if file extension is not specified then: Error [ERR_MODULE_NOT_FOUND]: Cannot find module
 
 // A schema is a collection of type definitions (hence "typeDefs")
 // that together define the "shape" of queries that are executed against
@@ -19,6 +21,7 @@ const typeDefs = `#graphql
   # Query is not just a naming convention.  Renaming this property (& the supporting resolver) results in the error: Query root type must be provided.
   type Query {
     books: [Book]
+    timestamp: String!
   }
 `;
 
@@ -38,21 +41,52 @@ const books = [
 const resolvers = {
     Query: {
       books: () => books,
+      timestamp: async (_, __, { dataSources }) => {
+        return dataSources.timestampDatasource.getTimestamp();
+      }
     },
   };
 
+interface ContextValue {
+    dataSources: {
+        timestampDatasource: TimeStampDatasource;
+    }
+}
+
 // The ApolloServer constructor requires two parameters: your schema
 // definition and your set of resolvers.
-const server = new ApolloServer({
+const server = new ApolloServer<ContextValue>({
     typeDefs,
-    resolvers,
+    resolvers    
   });
+
+  /*
+  export class TimeStampDatasource2 {
+    constructor(cache: KeyValueCache<string>) {
+
+    }
+
+    get(): string {
+        return 'a timestamp';
+    }
+}
+*/
   
   // Passing an ApolloServer instance to the `startStandaloneServer` function:
   //  1. creates an Express app
   //  2. installs your ApolloServer instance as middleware
   //  3. prepares your app to handle incoming requests
   const { url } = await startStandaloneServer(server, {
+    context: async ({req}) => {
+        const { cache } = server;
+        return {
+            dataSources: {
+                // This will create a new instance of our data source on every request.
+                // If you need to reuse a single instance, such as a database connection, you can pass this into the datasource class as a parameter.
+                timestampDatasource: new TimeStampDatasource()
+            }
+        }
+    },
     listen: { port: 4000 },
   });
   
